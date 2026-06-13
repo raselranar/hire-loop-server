@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import "dotenv/config";
 // module
 import express from "express";
@@ -8,6 +8,10 @@ const app = express();
 const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(cors());
+app.use((req, res, next) => {
+  console.log(req);
+  next();
+});
 
 async function run() {
   try {
@@ -15,8 +19,33 @@ async function run() {
     const database = client.db(process.env.DB_NAME);
     const jobs = database.collection("jobs");
     const company = database.collection("company");
+    const users = database.collection("user");
+    const jobApplication = database.collection("jobApplication");
 
-    // Create a document to insert
+    // get users
+    app.get("/api/users", async (req, res) => {
+      const result = await users.find().toArray();
+      res.send(result);
+    });
+    // job application route
+    app.post("/api/jobApplication", async (req, res) => {
+      const result = await jobApplication.insertOne(req.body);
+      console.log(result);
+      res.send(result);
+    });
+
+    // get all applications of applicant
+    app.get("/api/jobApplication", async (req, res) => {
+      const query = { applicantId: req.query.applicantId };
+      console.log(query);
+      const result = await jobApplication.find(query).toArray();
+      res.send(result);
+    });
+    // get all jobs
+    app.get("/api/jobs", async (req, res) => {
+      const result = await jobs.find().toArray();
+      res.send(result);
+    });
 
     // insert job document route
     app.post("/api/jobs", async (req, res) => {
@@ -38,6 +67,14 @@ async function run() {
       console.log("company jobs", result);
       res.send(result);
     });
+    // get jobs details by id
+    app.get("/api/jobs/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await jobs.findOne(query);
+      res.send(result);
+    });
+
     // add company
     app.post("/api/company", async (req, res) => {
       console.log(req.body);
@@ -54,6 +91,30 @@ async function run() {
       const result = await company.findOne(query);
       console.log("company profile", result);
       res.send(result || { message: "No company found", status: 404 });
+    });
+    // get companies
+    app.get("/api/companies", async (req, res) => {
+      const result = await company.find().toArray();
+      res.send(result);
+    });
+
+    // get companies by id
+    app.patch("/api/companies/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const updatedCompany = req.body;
+      const updatedDoc = {
+        $set: {
+          status: updatedCompany.status,
+        },
+      };
+      const result = await company.updateOne(query, updatedDoc);
+      console.log("get companies by id", result);
+      const response =
+        result.modifiedCount > 0
+          ? { message: "success", status: 200 }
+          : { message: "No company found", status: 404 };
+      res.send(response);
     });
   } finally {
     // Close the MongoDB client connection
