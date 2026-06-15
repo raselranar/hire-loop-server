@@ -8,10 +8,26 @@ const app = express();
 const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(cors());
-app.use((req, res, next) => {
-  console.log(req);
+
+// verify jwt token
+
+const verifySeeker = (req, res, next) => {
+  const role = req?.user?.role;
+  if (role !== "seeker") return res.status(403).send("forbidden access");
   next();
-});
+};
+// admin verify
+const verifyAdmin = (req, res, next) => {
+  const role = req?.user?.role;
+  if (role !== "admin") return res.status(403).send("forbidden access");
+  next();
+};
+// recruiter verify
+const verifyRecruiter = (req, res, next) => {
+  const role = req?.user?.role;
+  if (role !== "recruiter") return res.status(403).send("forbidden access");
+  next();
+};
 
 async function run() {
   try {
@@ -21,6 +37,27 @@ async function run() {
     const company = database.collection("company");
     const users = database.collection("user");
     const jobApplication = database.collection("jobApplication");
+    const ses = database.collection("session");
+
+    const verifyToken = async (req, res, next) => {
+      console.log(req.headers);
+      const authorization = req?.headers?.authorization;
+      if (!authorization) return res.status(401).send("Unauthorized");
+
+      const token = authorization.split(" ")[1];
+      if (token === "null") return res.status(401).send("Unauthorized");
+      const query = { token };
+      const session = await ses.findOne(query);
+      if (!session) return res.status(401).send("Unauthorized");
+
+      const userId = session.userId;
+      const userQuery = { _id: userId };
+      const user = users.findOne(userQuery);
+      if (!user) return res.status(401).send("Unauthorized");
+      req.user = user;
+
+      next();
+    };
 
     // get users
     app.get("/api/users", async (req, res) => {
@@ -35,15 +72,40 @@ async function run() {
     });
 
     // get all applications of applicant
-    app.get("/api/jobApplication", async (req, res) => {
-      const query = { applicantId: req.query.applicantId };
-      console.log(query);
-      const result = await jobApplication.find(query).toArray();
-      res.send(result);
-    });
+    app.get(
+      "/api/jobApplication",
+      verifyToken,
+      verifySeeker,
+      async (req, res) => {
+        const applicantId = req.query.applicantId;
+        if (req.user._id.toString() !== applicantId)
+          return res.status(403).send("forbidden access");
+
+        const query = { applicantId };
+        console.log(query);
+        const result = await jobApplication.find(query).toArray();
+        res.send(result);
+      },
+    );
     // get all jobs
     app.get("/api/jobs", async (req, res) => {
-      const result = await jobs.find().toArray();
+      const query = {};
+
+      console.log("query", req.query);
+      if (req.query.search) {
+        query.$or = [
+          { jobTitle: { $regex: req.query.search, $options: "i" } },
+          { company: { $regex: req.query.search, $options: "i" } },
+        ];
+      }
+      if (req.query.department) {
+        query.department = req.query.department;
+      }
+      if (req.query.experience) {
+        query.experience = req.query.experience;
+      }
+
+      const result = await jobs.find(query).toArray();
       res.send(result);
     });
 
@@ -93,7 +155,7 @@ async function run() {
       res.send(result || { message: "No company found", status: 404 });
     });
     // get companies
-    app.get("/api/companies", async (req, res) => {
+    app.get("/api/companies", verifyToken, verifyAdmin, async (req, res) => {
       const result = await company.find().toArray();
       res.send(result);
     });
