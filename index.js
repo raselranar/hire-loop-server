@@ -104,9 +104,23 @@ async function run() {
       if (req.query.experience) {
         query.experience = req.query.experience;
       }
+      if (req.query.page) {
+        const page = Number(req.query.page);
+        const perPage = Number(req.query.perPage) || 10;
+        console.log({ page, perPage });
+        const totalJobs = await jobs.countDocuments(query);
+        const result = await jobs
+          .find(query)
+          .skip((page - 1) * perPage)
+          .limit(perPage)
+          .toArray();
+        console.log(result);
+        res.send({ result, totalJobs });
+      }
 
       const result = await jobs.find(query).toArray();
-      res.send(result);
+
+      res.send({ result });
     });
 
     // insert job document route
